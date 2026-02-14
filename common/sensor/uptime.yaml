@@ -1,0 +1,8 @@
+---
+# from https://github.com/AlexMekkering/esphome-config/blob/master/common/sensor/uptime.yaml
+# version 1.0 KL 2020-12-30
+platform: uptime
+name: Uptime
+unit_of_measurement: h
+filters:
+  - lambda: return int((x + 1800.0) / 3600.0);

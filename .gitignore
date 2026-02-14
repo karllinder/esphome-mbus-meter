@@ -1,0 +1,31 @@
+# ESPHome build artifacts
+/.esphome/
+
+# Claude Code local settings
+/.claude/
+
+# Secrets - NEVER commit these
+/secrets.yaml
+common/packages/secrets.yaml
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Log and debug files
+*.log
+logs_*.txt
+debug*.txt
+manual_crc_calculation.txt
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+.DS_Store

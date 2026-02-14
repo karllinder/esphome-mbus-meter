@@ -1,0 +1,5 @@
+---
+# from https://esphome.io/components/binary_sensor/status.html
+# version 1.0 KL 2020-12-30
+platform: status
+name: "Status"
