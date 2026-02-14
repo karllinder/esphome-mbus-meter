@@ -12,6 +12,7 @@
 
 # Local configuration (personal network/device settings)
 utility meter.yaml
+test_compile.yaml
 
 # Legacy/development files
 mbus.h
