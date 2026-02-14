@@ -10,6 +10,14 @@
 # Local ESPHome test packages (not part of the component)
 /common/
 
+# Local configuration (personal network/device settings)
+utility meter.yaml
+
+# Legacy/development files
+mbus.h
+crc_validator.py
+validate_crc16.py
+
 # Python cache
 __pycache__/
 *.pyc

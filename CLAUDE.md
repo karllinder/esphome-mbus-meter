@@ -57,18 +57,21 @@ Electricity Meter -> UART (2400 baud) -> Frame Detector -> 2A/A1 Parser -> OBIS 
 - **2A frames**: Short frames (~16-20 bytes) containing real-time active power data, sent frequently
 - **A1 frames**: Long frames (~150+ bytes) containing comprehensive meter data (power, current, voltage, energy counters), sent every ~10 seconds
 
-### Key Files
-- `utility meter.yaml` - Main ESPHome configuration defining sensors, UART, and component setup
+### Repository Structure (ESPHome external component format)
 - `components/mbus_meter/mbus_meter.h` - Component header with sensor declarations and method prototypes
 - `components/mbus_meter/mbus_meter.cpp` - Component implementation with frame parsing and OBIS decoding
 - `components/mbus_meter/__init__.py` - ESPHome component registration (platform + UART device)
 - `components/mbus_meter/sensor.py` - Sensor platform schema and code generation
 - `components/mbus_meter/text_sensor.py` - Text sensor platform schema and code generation
-- `mbus.h` - Legacy standalone component (not used by current component system)
-- `common/` - Shared ESPHome packages (WiFi, device base, time, sensors, etc.)
-- `crc_validator.py` / `validate_crc16.py` - CRC-16 validation tools for HDLC frame debugging
-- `example_2a_frame_config.yaml` - Example config showing separate 2A frame power sensor
-- `README.txt` - Norwegian HAN specification reference with OBIS code tables
+- `example.yaml` - Full example configuration for users
+- `README.md` - User-facing documentation with installation and usage instructions
+- `LICENSE` - MIT license
+
+### Local-only files (not in repo)
+- `utility meter.yaml` - Personal ESPHome config with network/device settings
+- `common/` - Shared ESPHome test packages (WiFi, device base, time, etc.)
+- `mbus.h` - Legacy standalone component (superseded by mbus_meter)
+- `crc_validator.py` / `validate_crc16.py` - CRC-16 validation tools for debugging
 
 ### OBIS Code Mapping (Norwegian HAN / AIDON_V0001)
 The component recognizes these OBIS codes:
