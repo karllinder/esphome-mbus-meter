@@ -326,7 +326,6 @@ uint32_t MbusMeter::extract_obis_value(uint16_t position, uint8_t length) {
 uint32_t MbusMeter::search_for_real_time_power() {
   // Search for pattern: 01:01:07:[POWER_BYTES]:02:02:16
   // Handles both two-byte and single-byte power values
-  // Known meter bug: sometimes sends truncated single-byte values
 
   for (uint16_t i = 0; i + 6 < this->uart_counter_; i++) {
     if (this->uart_buffer_[i] != 0x01 ||
@@ -350,23 +349,6 @@ uint32_t MbusMeter::search_for_real_time_power() {
         this->uart_buffer_[i + 5] == 0x02 &&
         this->uart_buffer_[i + 6] == 0x16) {
       uint32_t power = this->uart_buffer_[i + 3];
-
-      // Known meter bug: 0x29 = truncated 10000W
-      if (power == 0x29) {
-        ESP_LOGW(TAG, "2A power: applying known correction 0x29 -> 10000W");
-        return 10000;
-      }
-      // Suspicious range 0x20-0x2F: likely truncated high values, skip
-      if (power >= 0x20 && power < 0x30) {
-        ESP_LOGW(TAG, "2A power: suspicious value 0x%02X in truncation range, skipping", power);
-        continue;
-      }
-      // Values < 32 with single-byte encoding are likely errors
-      if (power < 50) {
-        ESP_LOGD(TAG, "2A power: ignoring low single-byte value %u W", power);
-        continue;
-      }
-
       ESP_LOGD(TAG, "2A power (single-byte): %u W [%02X]", power, this->uart_buffer_[i + 3]);
       return power;
     }
@@ -382,26 +364,22 @@ void MbusMeter::parse_a1_frame() {
   // Standard entry:  02:01:[TYPE]:07:[VALUE_BYTES]
   // Energy entry:    02:01:[TYPE]:08:[VALUE_BYTES]
 
-  // Extract text sensors from header (values don't change, only parse until published)
-  bool need_text = (this->obis_version_text_sensor_ != nullptr && !this->obis_version_text_sensor_->has_state()) ||
-                   (this->meter_id_text_sensor_ != nullptr && !this->meter_id_text_sensor_->has_state());
-  if (need_text) {
-    for (uint16_t i = 0; i + 4 < this->uart_counter_ && i < 40; i++) {
-      if (this->uart_buffer_[i] != 0x02 || this->uart_buffer_[i + 1] != 0x02 || this->uart_buffer_[i + 2] != 0x01)
-        continue;
-      uint8_t type = this->uart_buffer_[i + 3];
-      if (type == 0x01 && i + 6 < this->uart_counter_) {
-        // OBIS version (1.1.0.2.129.255): skip non-printable prefix bytes (02:0B)
-        uint16_t text_pos = i + 4;
-        while (text_pos < this->uart_counter_ && text_pos < i + 8 &&
-               (this->uart_buffer_[text_pos] < 0x20 || this->uart_buffer_[text_pos] > 0x7E)) {
-          text_pos++;
-        }
-        this->parse_text_value(text_pos, this->obis_version_text_sensor_);
-      } else if (type == 0x10 && i + 5 < this->uart_counter_) {
-        // Meter ID (0.0.96.1.0.255)
-        this->parse_text_value(i + 4, this->meter_id_text_sensor_);
+  // Extract text sensors from header: 02:02:01:[TYPE]:[DATA...]
+  for (uint16_t i = 0; i + 4 < this->uart_counter_ && i < 40; i++) {
+    if (this->uart_buffer_[i] != 0x02 || this->uart_buffer_[i + 1] != 0x02 || this->uart_buffer_[i + 2] != 0x01)
+      continue;
+    uint8_t type = this->uart_buffer_[i + 3];
+    if (type == 0x01 && i + 6 < this->uart_counter_) {
+      // OBIS version (1.1.0.2.129.255): skip non-printable prefix bytes (02:0B)
+      uint16_t text_pos = i + 4;
+      while (text_pos < this->uart_counter_ && text_pos < i + 8 &&
+             (this->uart_buffer_[text_pos] < 0x20 || this->uart_buffer_[text_pos] > 0x7E)) {
+        text_pos++;
       }
+      this->parse_text_value(text_pos, this->obis_version_text_sensor_);
+    } else if (type == 0x10 && i + 5 < this->uart_counter_) {
+      // Meter ID (0.0.96.1.0.255)
+      this->parse_text_value(i + 4, this->meter_id_text_sensor_);
     }
   }
 
