@@ -1,5 +1,0 @@
----
-# from https://github.com/AlexMekkering/esphome-config/blob/master/common/sensor/wifi-signal.yaml
-# version 1.0 KL 2020-12-30
-platform: wifi_signal
-name: "WiFi Signal"
