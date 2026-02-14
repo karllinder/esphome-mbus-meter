@@ -377,6 +377,14 @@ void MbusMeter::parse_a1_frame() {
         text_pos++;
       }
       this->parse_text_value(text_pos, this->obis_version_text_sensor_);
+    } else if (type == 0x07 && i + 5 < this->uart_counter_) {
+      // Meter type (0.0.96.1.7.255): skip non-printable prefix bytes
+      uint16_t text_pos = i + 4;
+      while (text_pos < this->uart_counter_ && text_pos < i + 8 &&
+             (this->uart_buffer_[text_pos] < 0x20 || this->uart_buffer_[text_pos] > 0x7E)) {
+        text_pos++;
+      }
+      this->parse_text_value(text_pos, this->meter_type_text_sensor_);
     } else if (type == 0x10 && i + 5 < this->uart_counter_) {
       // Meter ID (0.0.96.1.0.255)
       this->parse_text_value(i + 4, this->meter_id_text_sensor_);
@@ -396,6 +404,7 @@ void MbusMeter::parse_a1_frame() {
   }
 
   // Search for energy counter patterns: 02:01:XX:08:...
+  bool found_reactive_import = false;
   for (uint16_t i = 15; i + 4 < this->uart_counter_; i++) {
     if (this->uart_buffer_[i] == 0x02 &&
         this->uart_buffer_[i + 1] == 0x01 &&
@@ -403,12 +412,11 @@ void MbusMeter::parse_a1_frame() {
 
       uint8_t energy_type = this->uart_buffer_[i + 2];
 
-      // Try to read multi-byte energy value after the pattern
-      // Energy counters are double-long-unsigned (4 bytes) in the HAN spec
       uint16_t value_start = i + 4;
       uint16_t value_end = this->find_next_separator(value_start);
       uint16_t value_length = value_end - value_start;
 
+      // Value length 0 means the energy counter is 0
       uint32_t energy_raw = 0;
       if (value_length >= 4) {
         energy_raw = this->extract_obis_value(value_start, 4);
@@ -432,6 +440,7 @@ void MbusMeter::parse_a1_frame() {
         case 0x03:
           ESP_LOGI(TAG, "A1: Reactive energy import (1.0.3.8.0.255): %u VArh [raw: %u]", energy_scaled, energy_raw);
           if (this->reactive_energy_sensor_ != nullptr) this->reactive_energy_sensor_->publish_state(energy_scaled);
+          found_reactive_import = true;
           break;
         case 0x04:
           ESP_LOGI(TAG, "A1: Reactive energy export (1.0.4.8.0.255): %u VArh [raw: %u]", energy_scaled, energy_raw);
@@ -443,6 +452,39 @@ void MbusMeter::parse_a1_frame() {
       }
 
       i += 4;
+    }
+  }
+
+  // Second pass: compact energy pattern 02:01:08:VALUE (OBIS type byte omitted)
+  // Some meters omit the type byte for reactive energy import
+  if (!found_reactive_import) {
+    for (uint16_t i = 15; i + 3 < this->uart_counter_; i++) {
+      if (this->uart_buffer_[i] == 0x02 &&
+          this->uart_buffer_[i + 1] == 0x01 &&
+          this->uart_buffer_[i + 2] == 0x08) {
+        uint16_t value_start = i + 3;
+        uint16_t value_end = this->find_next_separator(value_start);
+        uint16_t value_length = value_end - value_start;
+
+        if (value_length > 0 && value_length <= 4) {
+          uint32_t energy_raw = 0;
+          if (value_length >= 4) {
+            energy_raw = this->extract_obis_value(value_start, 4);
+          } else if (value_length >= 2) {
+            energy_raw = this->extract_obis_value(value_start, 2);
+          } else {
+            energy_raw = this->uart_buffer_[value_start];
+          }
+          uint32_t energy_scaled = energy_raw * 10;
+
+          ESP_LOGI(TAG, "A1: Reactive energy import (1.0.3.8.0.255): %u VArh [raw: %u, compact]",
+                   energy_scaled, energy_raw);
+          if (this->reactive_energy_sensor_ != nullptr) {
+            this->reactive_energy_sensor_->publish_state(energy_scaled);
+          }
+          break;
+        }
+      }
     }
   }
 
@@ -487,9 +529,18 @@ void MbusMeter::parse_a1_frame() {
 
 uint16_t MbusMeter::find_next_separator(uint16_t start_pos) {
   for (uint16_t i = start_pos; i + 2 < this->uart_counter_; i++) {
+    // Standard separator: 02:02:16
     if (this->uart_buffer_[i] == 0x02 &&
         this->uart_buffer_[i + 1] == 0x02 &&
         this->uart_buffer_[i + 2] == 0x16) {
+      return i;
+    }
+    // Energy section separator: 02:02:01:16
+    if (i + 3 < this->uart_counter_ &&
+        this->uart_buffer_[i] == 0x02 &&
+        this->uart_buffer_[i + 1] == 0x02 &&
+        this->uart_buffer_[i + 2] == 0x01 &&
+        this->uart_buffer_[i + 3] == 0x16) {
       return i;
     }
   }
