@@ -377,10 +377,33 @@ uint32_t MbusMeter::search_for_real_time_power() {
 
 void MbusMeter::parse_a1_frame() {
   // A1 frame structure:
-  // Header: A1:08:83:13:E6:40:01:0D:...
+  // Header: A1:[...]:02:02:01:01:02:0B:[version]:02:02:01:10:[meter_id]:02:02:01:07:...
   // OBIS entries separated by 02:02:16
   // Standard entry:  02:01:[TYPE]:07:[VALUE_BYTES]
   // Energy entry:    02:01:[TYPE]:08:[VALUE_BYTES]
+
+  // Extract text sensors from header (values don't change, only parse until published)
+  bool need_text = (this->obis_version_text_sensor_ != nullptr && !this->obis_version_text_sensor_->has_state()) ||
+                   (this->meter_id_text_sensor_ != nullptr && !this->meter_id_text_sensor_->has_state());
+  if (need_text) {
+    for (uint16_t i = 0; i + 4 < this->uart_counter_ && i < 40; i++) {
+      if (this->uart_buffer_[i] != 0x02 || this->uart_buffer_[i + 1] != 0x02 || this->uart_buffer_[i + 2] != 0x01)
+        continue;
+      uint8_t type = this->uart_buffer_[i + 3];
+      if (type == 0x01 && i + 6 < this->uart_counter_) {
+        // OBIS version (1.1.0.2.129.255): skip non-printable prefix bytes (02:0B)
+        uint16_t text_pos = i + 4;
+        while (text_pos < this->uart_counter_ && text_pos < i + 8 &&
+               (this->uart_buffer_[text_pos] < 0x20 || this->uart_buffer_[text_pos] > 0x7E)) {
+          text_pos++;
+        }
+        this->parse_text_value(text_pos, this->obis_version_text_sensor_);
+      } else if (type == 0x10 && i + 5 < this->uart_counter_) {
+        // Meter ID (0.0.96.1.0.255)
+        this->parse_text_value(i + 4, this->meter_id_text_sensor_);
+      }
+    }
+  }
 
   // Verbose hex dump for debugging
   ESP_LOGV(TAG, "A1 frame hex dump (%d bytes):", this->uart_counter_);
