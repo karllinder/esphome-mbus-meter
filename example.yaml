@@ -1,0 +1,158 @@
+# ESPHome M-Bus Meter - Full Example Configuration
+# For Norwegian HAN smart electricity meters (AIDON_V0001 and compatible)
+#
+# Adjust substitutions, WiFi, and pin configuration to match your setup.
+
+substitutions:
+  node_name: utility-meter
+  upper_node_name: Utility Meter
+
+esphome:
+  name: ${node_name}
+  friendly_name: ${upper_node_name}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${node_name} Fallback"
+    password: !secret fallback_password
+
+api:
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+logger:
+  level: DEBUG
+  baud_rate: 0  # Disable serial logging (UART used for meter)
+
+# Load the M-Bus meter component from GitHub
+external_components:
+  - source: github://karllinder/esphome-mbus-meter
+    components: [ mbus_meter ]
+
+# UART configuration for HAN port
+uart:
+  id: uart_bus
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 2400
+  rx_buffer_size: 2048
+
+# M-Bus meter component
+mbus_meter:
+  id: mbus_reader
+  uart_id: uart_bus
+
+# Sensors
+sensor:
+  - platform: mbus_meter
+    id: mbus_reader
+
+    # Power measurements
+    power:
+      name: "AMS Power Consumption"
+      unit_of_measurement: W
+      device_class: power
+      state_class: measurement
+      accuracy_decimals: 0
+      icon: mdi:flash-outline
+
+    # Current measurements (3-phase)
+    current_l1:
+      name: "AMS Current L1"
+      unit_of_measurement: A
+      device_class: current
+      state_class: measurement
+      accuracy_decimals: 1
+
+    current_l2:
+      name: "AMS Current L2"
+      unit_of_measurement: A
+      device_class: current
+      state_class: measurement
+      accuracy_decimals: 1
+
+    current_l3:
+      name: "AMS Current L3"
+      unit_of_measurement: A
+      device_class: current
+      state_class: measurement
+      accuracy_decimals: 1
+
+    # Voltage measurements (3-phase)
+    voltage_l1:
+      name: "AMS Voltage L1"
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      accuracy_decimals: 1
+
+    voltage_l2:
+      name: "AMS Voltage L2"
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      accuracy_decimals: 1
+
+    voltage_l3:
+      name: "AMS Voltage L3"
+      unit_of_measurement: V
+      device_class: voltage
+      state_class: measurement
+      accuracy_decimals: 1
+
+    # Energy measurements
+    energy:
+      name: "AMS Energy Import"
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing
+      accuracy_decimals: 0
+
+    # Reactive power measurements
+    reactive_power:
+      name: "AMS Reactive Power"
+      unit_of_measurement: var
+      device_class: reactive_power
+      state_class: measurement
+      accuracy_decimals: 0
+
+    reactive_energy:
+      name: "AMS Reactive Energy Import"
+      unit_of_measurement: varh
+      device_class: energy
+      state_class: total_increasing
+      accuracy_decimals: 0
+
+    reactive_export_energy:
+      name: "AMS Reactive Energy Export"
+      unit_of_measurement: varh
+      device_class: energy
+      state_class: total_increasing
+      accuracy_decimals: 0
+
+# Text sensors (meter identification)
+text_sensor:
+  - platform: mbus_meter
+    id: mbus_reader
+
+    obis_version:
+      name: "AMS OBIS Version"
+      icon: mdi:information-outline
+
+    meter_id:
+      name: "AMS Meter ID"
+      icon: mdi:identifier
+
+    meter_type:
+      name: "AMS Meter Type"
+      icon: mdi:gauge
