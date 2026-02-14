@@ -4,8 +4,6 @@ from esphome.components import sensor
 from esphome.const import (
     CONF_ID,
     CONF_POWER,
-    CONF_CURRENT,
-    CONF_VOLTAGE,
     CONF_ENERGY,
     DEVICE_CLASS_CURRENT,
     DEVICE_CLASS_ENERGY,

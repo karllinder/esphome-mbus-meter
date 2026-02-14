@@ -4,7 +4,7 @@ from esphome.components import uart
 from esphome.const import CONF_ID
 
 DEPENDENCIES = ["uart"]
-CODEOWNERS = ["@esphome"]
+CODEOWNERS = ["@karllinder"]
 
 mbus_meter_ns = cg.esphome_ns.namespace("mbus_meter")
 MbusMeter = mbus_meter_ns.class_("MbusMeter", cg.Component, uart.UARTDevice)
