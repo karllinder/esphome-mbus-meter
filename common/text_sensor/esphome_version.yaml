@@ -1,8 +1,0 @@
----
-# esphome_version.yaml
-# created from https://next.esphome.io/components/text_sensor/version.html
-# v1.0 2020-12-30 KL - First rev
-# v1.1 2020-12-30 KL - duplicate textsensor
-platform: version
-name: "ESPHome Version"
-hide_timestamp: True

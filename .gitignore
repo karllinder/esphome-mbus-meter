@@ -6,7 +6,9 @@
 
 # Secrets - NEVER commit these
 /secrets.yaml
-common/packages/secrets.yaml
+
+# Local ESPHome test packages (not part of the component)
+/common/
 
 # Python cache
 __pycache__/

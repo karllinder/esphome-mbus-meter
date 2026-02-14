@@ -1,9 +1,0 @@
----
-# debug.yaml
-# created from https://next.esphome.io/components/text_sensor/version.html
-# v1.0 2020-12-30 KL - First rev
-platform: debug
-device:
-  name: "Device Info"
-reset_reason:
-  name: "Reset Reason"

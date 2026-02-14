@@ -1,8 +1,0 @@
----
-# reboot.yaml
-# created from https://next.esphome.io/components/switch/restart.html
-# v1.0 2020-12-30 KL - First rev
-# v1.1 2020-12-30 KL - yaml changes
-platform: restart
-name: "Reboot"
-entity_category: config
