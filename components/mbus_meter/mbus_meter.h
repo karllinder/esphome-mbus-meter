@@ -39,12 +39,10 @@ class MbusMeter : public Component, public uart::UARTDevice {
   bool read_message();
   void process_current_frame();
   void parse_han_obis(uint16_t position);
-  void parse_extended_obis(uint16_t position);
-  void parse_power_value(uint16_t position);
   void parse_current_value(uint16_t position, uint8_t phase);
   void parse_voltage_value(uint16_t position, uint8_t phase);
   void parse_energy_value(uint16_t position);
-  void parse_text_value(uint16_t position, text_sensor::TextSensor* sensor);
+  void parse_text_value(uint16_t position, text_sensor::TextSensor *sensor);
   uint32_t extract_obis_value(uint16_t position, uint8_t length);
   bool is_valid_frame_start(uint16_t position);
   void reset_buffer();
@@ -74,11 +72,8 @@ class MbusMeter : public Component, public uart::UARTDevice {
   uint16_t uart_counter_{0};
   uint32_t last_frame_time_{0};
   bool use_2a_frame_own_sensor_{false};
-  
-  static const uint8_t HDLC_FLAG = 0x7E;
-  static const uint8_t OBIS_CODE_LENGTH = 6;
+
   static const uint16_t FRAME_TIMEOUT_MS = 2000;
-  static const uint16_t MAX_FRAME_SIZE = 1024;
 };
 
 }  // namespace mbus_meter
