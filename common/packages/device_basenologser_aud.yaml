@@ -1,0 +1,31 @@
+# device_base.yaml
+# Created 2020-12-30 - from https://esphome.io/guides/configuration-types.html
+# This base config with no Serial logging
+# v1.0 KL 2020-12-30 - First rev.
+# v1.1 KL 2020-12-30 - Typo in platform
+# v3.0 KL 2024-01-05 - moved to new stadard, added variabels and removed API
+# v3.1 KL 2024-07-11 - update safemode and OTA
+# v4.0 KL 2025-05-31 - Arduino
+  # name,platform and board is set from config via subsituties
+esphome:
+  name: ${node_name}
+  friendly_name: ${upper_node_name}
+  comment: Built by packetconfig version 3.0 (${static_ip})
+  
+${platform}:
+  board: ${eboard}
+  framework: 
+    type: arduino
+    version: recommended
+# OTA with safe mode
+safe_mode:
+
+ota:
+  - platform: esphome
+    id: my_ota
+    password: !secret ota_password
+
+# Enable logging
+logger:
+  level: ${log_level}
+  baud_rate: 0

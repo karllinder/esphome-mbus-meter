@@ -1,0 +1,4 @@
+# Sync time
+time:
+  - platform: sntp
+    id: sntp_time
