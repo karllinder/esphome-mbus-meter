@@ -2,9 +2,9 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import sensor
 from esphome.const import (
+    CONF_ENERGY,
     CONF_ID,
     CONF_POWER,
-    CONF_ENERGY,
     DEVICE_CLASS_CURRENT,
     DEVICE_CLASS_ENERGY,
     DEVICE_CLASS_POWER,
@@ -17,7 +17,7 @@ from esphome.const import (
     UNIT_WATT_HOURS,
 )
 
-from . import MbusMeter, mbus_meter_ns
+from . import MbusMeter
 
 DEPENDENCIES = ["mbus_meter"]
 
