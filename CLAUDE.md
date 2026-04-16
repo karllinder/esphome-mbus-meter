@@ -15,6 +15,29 @@ esphome run "utility meter.yaml"        # Compile + upload
 esphome logs "utility meter.yaml"       # Live logs
 ```
 
+Validate or compile the CI test configs locally:
+
+```bash
+esphome config tests/test.esp32-ard.yaml
+esphome compile tests/test.esp32-ard.yaml
+esphome config tests/test.esp8266-ard.yaml
+esphome compile tests/test.esp8266-ard.yaml
+```
+
+Lint (matches what CI runs):
+
+```bash
+ruff check .
+clang-format --dry-run -Werror components/mbus_meter/*.cpp components/mbus_meter/*.h
+```
+
+## Branches
+
+- **`main`** — stable, default for users. Only small, low-risk changes land here.
+- **`beta`** — upstream-style refactors and larger cleanups soak here before merging back to `main`. Users can opt in with `ref: beta` in `external_components`.
+
+Target refactor PRs at `beta`. Target bug fixes / hardware-validated changes at `main`.
+
 ## Architecture
 
 ### Data Flow
@@ -34,15 +57,24 @@ Meter -> UART (2400 baud) -> Frame Detector -> 2A/A1 Parser -> OBIS Decoder -> H
 ### Repository Structure
 ```
 components/mbus_meter/
-  __init__.py       # Component registration (UART device)
-  sensor.py         # Numeric sensor schema + codegen
-  text_sensor.py    # Text sensor schema + codegen
-  mbus_meter.h      # Class declaration, sensor pointers, constants
-  mbus_meter.cpp    # Frame parsing, OBIS decoding, sensor publishing
-example.yaml        # Full example config for users
-README.md           # User docs with install instructions
-LICENSE             # MIT
+  __init__.py           # Component registration (UART device)
+  sensor.py             # Numeric sensor schema + codegen
+  text_sensor.py        # Text sensor schema + codegen
+  mbus_meter.h          # Class declaration, sensor pointers, constants
+  mbus_meter.cpp        # Frame parsing, OBIS decoding, sensor publishing
+tests/
+  test.esp32-ard.yaml   # Compile-test config for ESP32 Arduino
+  test.esp8266-ard.yaml # Compile-test config for ESP8266 Arduino
+.github/workflows/
+  ci.yaml               # Compile matrix on PR + push to main/beta
+example.yaml            # Full example config for users
+README.md               # User docs with install instructions
+LICENSE                 # MIT
 ```
+
+### Tooling
+- `.clang-format` — copied verbatim from upstream `esphome/esphome` dev branch. CI runs `clang-format --dry-run -Werror` on `components/mbus_meter/*.cpp|*.h`.
+- `pyproject.toml` — `[tool.ruff]` selects `E/F/I/UP`, ignores `E501`, targets `py311`. CI runs `ruff check .`.
 
 ### Local-only files (gitignored)
 - `utility meter.yaml` - Personal ESPHome config
@@ -73,3 +105,8 @@ LICENSE             # MIT
 - 2A frames sometimes truncate power to 1 byte instead of 2
 - `0x29` single-byte = known bug for ~10000W
 - Range `0x20-0x2F` single-byte = likely truncated high values (skipped)
+
+### Open hardware-validation issues
+These document behaviours that looked suspicious in review but can only be confirmed against a live meter. Don't change the code blindly.
+- **#5** — `parse_current_value` reads `int16_t` then applies `fabs()`, silently dropping sign. Needs meter trace (especially under solar export) to decide whether the spec is signed or the reads are actually unsigned.
+- **#6** — `CLAUDE.md` (this file) describes a `0x20-0x2F` single-byte skip that isn't implemented in current code. Either the quirks note is stale or the filter was intentionally removed. Needs trace from a meter emitting truncated 2A frames.
