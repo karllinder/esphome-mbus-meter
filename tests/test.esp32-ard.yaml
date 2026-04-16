@@ -1,0 +1,65 @@
+esphome:
+  name: mbus-meter-esp32-ard
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+  baud_rate: 0
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+
+uart:
+  id: uart_bus
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 2400
+  rx_buffer_size: 2048
+
+mbus_meter:
+  id: mbus_reader
+  uart_id: uart_bus
+
+sensor:
+  - platform: mbus_meter
+    id: mbus_reader
+    power:
+      name: Power
+    current_l1:
+      name: Current L1
+    current_l2:
+      name: Current L2
+    current_l3:
+      name: Current L3
+    voltage_l1:
+      name: Voltage L1
+    voltage_l2:
+      name: Voltage L2
+    voltage_l3:
+      name: Voltage L3
+    energy:
+      name: Energy
+    reactive_power:
+      name: Reactive Power
+    reactive_energy:
+      name: Reactive Energy
+    reactive_export_energy:
+      name: Reactive Export Energy
+    power_2a_frame:
+      name: Power 2A
+    2a_frame_own_sensor: true
+
+text_sensor:
+  - platform: mbus_meter
+    id: mbus_reader
+    obis_version:
+      name: OBIS Version
+    meter_id:
+      name: Meter ID
+    meter_type:
+      name: Meter Type
