@@ -1,5 +1,8 @@
 #include "mbus_meter.h"
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
+
+#include <cmath>
 
 namespace esphome {
 namespace mbus_meter {
@@ -14,7 +17,7 @@ void MbusMeter::setup() {
 
 void MbusMeter::dump_config() {
   ESP_LOGCONFIG(TAG, "Norwegian HAN M-Bus Meter:");
-  ESP_LOGCONFIG(TAG, "  UART Buffer Size: %d bytes", sizeof(this->uart_buffer_));
+  ESP_LOGCONFIG(TAG, "  UART Buffer Size: %u bytes", (unsigned) sizeof(this->uart_buffer_));
   LOG_SENSOR("  ", "Power", this->power_sensor_);
   LOG_SENSOR("  ", "Current L1", this->current_l1_sensor_);
   LOG_SENSOR("  ", "Current L2", this->current_l2_sensor_);
@@ -33,19 +36,15 @@ void MbusMeter::dump_config() {
   LOG_TEXT_SENSOR("  ", "Meter Type", this->meter_type_text_sensor_);
 }
 
-void MbusMeter::loop() {
-  this->read_message();
-}
+void MbusMeter::loop() { this->read_message(); }
 
-void MbusMeter::reset_buffer() {
-  this->uart_counter_ = 0;
-}
+void MbusMeter::reset_buffer() { this->uart_counter_ = 0; }
 
 bool MbusMeter::is_valid_frame_start(uint16_t position) {
-  if (position + 2 >= this->uart_counter_) return false;
+  if (position + 2 >= this->uart_counter_)
+    return false;
   return ((this->uart_buffer_[position] == 0x2A || this->uart_buffer_[position] == 0xA1) &&
-          this->uart_buffer_[position + 1] == 0x08 &&
-          this->uart_buffer_[position + 2] == 0x83);
+          this->uart_buffer_[position + 1] == 0x08 && this->uart_buffer_[position + 2] == 0x83);
 }
 
 bool MbusMeter::read_message() {
@@ -53,14 +52,14 @@ bool MbusMeter::read_message() {
 
   // Frame timeout - process accumulated data if no new bytes arrive
   if (this->uart_counter_ > 0 && now - this->last_frame_time_ > FRAME_TIMEOUT_MS) {
-    if (this->uart_buffer_[0] == 0xA1 && this->uart_counter_ >= 100) {
-      ESP_LOGD(TAG, "A1 frame timeout - processing %d bytes", this->uart_counter_);
+    if (this->uart_buffer_[0] == 0xA1 && this->uart_counter_ >= A1_FRAME_MIN_BYTES_TIMEOUT) {
+      ESP_LOGD(TAG, "A1 frame timeout - processing %u bytes", this->uart_counter_);
       this->process_current_frame();
-    } else if (this->uart_buffer_[0] == 0x2A && this->uart_counter_ >= 18) {
-      ESP_LOGD(TAG, "2A frame timeout - processing %d bytes", this->uart_counter_);
+    } else if (this->uart_buffer_[0] == 0x2A && this->uart_counter_ >= SHORT_FRAME_MIN_BYTES_TIMEOUT) {
+      ESP_LOGD(TAG, "2A frame timeout - processing %u bytes", this->uart_counter_);
       this->process_current_frame();
     } else {
-      ESP_LOGV(TAG, "Frame timeout: discarding %d bytes (insufficient data)", this->uart_counter_);
+      ESP_LOGV(TAG, "Frame timeout: discarding %u bytes (insufficient data)", this->uart_counter_);
     }
     this->reset_buffer();
     return false;
@@ -74,13 +73,13 @@ bool MbusMeter::read_message() {
     this->uart_buffer_[this->uart_counter_++] = byte;
 
     // Process complete frames based on type and minimum size
-    if (this->uart_counter_ >= 20 && this->is_valid_frame_start(0)) {
-      if (this->uart_buffer_[0] == 0xA1 && this->uart_counter_ >= 150) {
-        ESP_LOGD(TAG, "Processing A1 frame of %d bytes", this->uart_counter_);
+    if (this->uart_counter_ >= FRAME_START_MIN_BYTES && this->is_valid_frame_start(0)) {
+      if (this->uart_buffer_[0] == 0xA1 && this->uart_counter_ >= A1_FRAME_MIN_BYTES_IMMEDIATE) {
+        ESP_LOGD(TAG, "Processing A1 frame of %u bytes", this->uart_counter_);
         this->process_current_frame();
         this->reset_buffer();
         return true;
-      } else if (this->uart_buffer_[0] != 0xA1 && this->uart_counter_ >= 50) {
+      } else if (this->uart_buffer_[0] != 0xA1 && this->uart_counter_ >= SHORT_FRAME_MIN_BYTES_IMMEDIATE) {
         this->process_current_frame();
         this->reset_buffer();
         return true;
@@ -89,7 +88,7 @@ bool MbusMeter::read_message() {
 
     // Buffer overflow protection
     if (this->uart_counter_ >= sizeof(this->uart_buffer_) - 1) {
-      ESP_LOGW(TAG, "Buffer overflow at %d bytes - processing and resetting", this->uart_counter_);
+      ESP_LOGW(TAG, "Buffer overflow at %u bytes - processing and resetting", this->uart_counter_);
       this->process_current_frame();
       this->reset_buffer();
       return false;
@@ -100,7 +99,8 @@ bool MbusMeter::read_message() {
 }
 
 void MbusMeter::process_current_frame() {
-  if (this->uart_counter_ < 10) return;
+  if (this->uart_counter_ < 10)
+    return;
 
   // 2A frames: short real-time power frames
   // Pattern: 2A:08:83:...:01:01:07:[POWER]:02:02:16...
@@ -121,24 +121,22 @@ void MbusMeter::process_current_frame() {
 
   // A1 frames: comprehensive meter data
   if (this->uart_buffer_[0] == 0xA1) {
-    ESP_LOGI(TAG, "A1 frame detected, length: %d bytes", this->uart_counter_);
+    ESP_LOGI(TAG, "A1 frame detected, length: %u bytes", this->uart_counter_);
     this->parse_a1_frame();
     return;
   }
 
   // Unknown frame type - scan for HAN OBIS patterns (02:02:01)
   for (uint16_t i = 0; i + 5 < this->uart_counter_; i++) {
-    if (this->uart_buffer_[i] == 0x02 &&
-        this->uart_buffer_[i + 1] == 0x02 &&
-        this->uart_buffer_[i + 2] == 0x01) {
+    if (this->uart_buffer_[i] == 0x02 && this->uart_buffer_[i + 1] == 0x02 && this->uart_buffer_[i + 2] == 0x01) {
       this->parse_han_obis(i);
     }
   }
 }
 
 void MbusMeter::parse_han_obis(uint16_t position) {
-  if (position + 10 >= this->uart_counter_) return;
-  if (position + 4 >= this->uart_counter_) return;
+  if (position + 10 >= this->uart_counter_)
+    return;
 
   // Pattern: 02:02:01:[OBIS_TYPE]:[LENGTH]:[DATA...]
   uint8_t obis_type = this->uart_buffer_[position + 3];
@@ -149,7 +147,8 @@ void MbusMeter::parse_han_obis(uint16_t position) {
       // OBIS List version identifier (1.1.0.2.129.255) - visible-string
       if (data_length == 0x02 && position + 6 < this->uart_counter_) {
         uint16_t text_start = position + 5;
-        if (this->uart_buffer_[text_start] == 0x0B) text_start++;  // Skip length prefix
+        if (this->uart_buffer_[text_start] == 0x0B)
+          text_start++;  // Skip length prefix
         this->parse_text_value(text_start, this->obis_version_text_sensor_);
       }
       break;
@@ -242,7 +241,8 @@ void MbusMeter::parse_han_obis(uint16_t position) {
 }
 
 void MbusMeter::parse_current_value(uint16_t position, uint8_t phase) {
-  if (position + 1 >= this->uart_counter_) return;
+  if (position + 1 >= this->uart_counter_)
+    return;
 
   // Norwegian HAN spec: long-signed, 0.1A resolution, format 3.1 (xxx.x A)
   int16_t raw_current = (this->uart_buffer_[position] << 8) | this->uart_buffer_[position + 1];
@@ -258,7 +258,8 @@ void MbusMeter::parse_current_value(uint16_t position, uint8_t phase) {
 }
 
 void MbusMeter::parse_voltage_value(uint16_t position, uint8_t phase) {
-  if (position + 1 >= this->uart_counter_) return;
+  if (position + 1 >= this->uart_counter_)
+    return;
 
   // Norwegian HAN spec: long-unsigned, 0.1V resolution, format 3.1 (xxx.x V)
   uint16_t raw_voltage = (this->uart_buffer_[position] << 8) | this->uart_buffer_[position + 1];
@@ -279,7 +280,8 @@ void MbusMeter::parse_voltage_value(uint16_t position, uint8_t phase) {
 }
 
 void MbusMeter::parse_energy_value(uint16_t position) {
-  if (position + 3 >= this->uart_counter_) return;
+  if (position + 3 >= this->uart_counter_)
+    return;
 
   // Norwegian HAN spec: double-long-unsigned, resolution 10 Wh, format 7.2
   uint32_t energy_raw = this->extract_obis_value(position, 4);
@@ -293,7 +295,8 @@ void MbusMeter::parse_energy_value(uint16_t position) {
 }
 
 void MbusMeter::parse_text_value(uint16_t position, text_sensor::TextSensor *sensor) {
-  if (sensor == nullptr || position >= this->uart_counter_) return;
+  if (sensor == nullptr || position >= this->uart_counter_)
+    return;
 
   std::string text_value;
   for (uint16_t i = 0; i < 20 && (position + i) < this->uart_counter_; i++) {
@@ -328,25 +331,20 @@ uint32_t MbusMeter::search_for_real_time_power() {
   // Handles both two-byte and single-byte power values
 
   for (uint16_t i = 0; i + 6 < this->uart_counter_; i++) {
-    if (this->uart_buffer_[i] != 0x01 ||
-        this->uart_buffer_[i + 1] != 0x01 ||
-        this->uart_buffer_[i + 2] != 0x07) continue;
+    if (this->uart_buffer_[i] != 0x01 || this->uart_buffer_[i + 1] != 0x01 || this->uart_buffer_[i + 2] != 0x07)
+      continue;
 
     // Two-byte power: 01:01:07:XX:YY:02:02:16
-    if (i + 7 < this->uart_counter_ &&
-        this->uart_buffer_[i + 5] == 0x02 &&
-        this->uart_buffer_[i + 6] == 0x02 &&
+    if (i + 7 < this->uart_counter_ && this->uart_buffer_[i + 5] == 0x02 && this->uart_buffer_[i + 6] == 0x02 &&
         this->uart_buffer_[i + 7] == 0x16) {
       uint32_t power = (this->uart_buffer_[i + 3] << 8) | this->uart_buffer_[i + 4];
-      ESP_LOGD(TAG, "2A power (two-byte): %u W [%02X:%02X]", power,
-               this->uart_buffer_[i + 3], this->uart_buffer_[i + 4]);
+      ESP_LOGD(TAG, "2A power (two-byte): %u W [%02X:%02X]", power, this->uart_buffer_[i + 3],
+               this->uart_buffer_[i + 4]);
       return power;
     }
 
     // Single-byte power: 01:01:07:XX:02:02:16
-    if (i + 6 < this->uart_counter_ &&
-        this->uart_buffer_[i + 4] == 0x02 &&
-        this->uart_buffer_[i + 5] == 0x02 &&
+    if (i + 6 < this->uart_counter_ && this->uart_buffer_[i + 4] == 0x02 && this->uart_buffer_[i + 5] == 0x02 &&
         this->uart_buffer_[i + 6] == 0x16) {
       uint32_t power = this->uart_buffer_[i + 3];
       ESP_LOGD(TAG, "2A power (single-byte): %u W [%02X]", power, this->uart_buffer_[i + 3]);
@@ -392,24 +390,16 @@ void MbusMeter::parse_a1_frame() {
   }
 
   // Verbose hex dump for debugging
-  ESP_LOGV(TAG, "A1 frame hex dump (%d bytes):", this->uart_counter_);
+  ESP_LOGV(TAG, "A1 frame hex dump (%u bytes):", this->uart_counter_);
   for (uint16_t i = 0; i < this->uart_counter_ && i < 300; i += 16) {
-    std::string line;
-    for (uint16_t j = i; j < i + 16 && j < this->uart_counter_; j++) {
-      char hex[4];
-      sprintf(hex, "%02X:", this->uart_buffer_[j]);
-      line += hex;
-    }
-    ESP_LOGV(TAG, "  %04X: %s", i, line.c_str());
+    uint16_t chunk_len = (this->uart_counter_ - i < 16) ? this->uart_counter_ - i : 16;
+    ESP_LOGV(TAG, "  %04X: %s", i, format_hex_pretty(&this->uart_buffer_[i], chunk_len).c_str());
   }
 
   // Search for energy counter patterns: 02:01:XX:08:...
   bool found_reactive_import = false;
   for (uint16_t i = 15; i + 4 < this->uart_counter_; i++) {
-    if (this->uart_buffer_[i] == 0x02 &&
-        this->uart_buffer_[i + 1] == 0x01 &&
-        this->uart_buffer_[i + 3] == 0x08) {
-
+    if (this->uart_buffer_[i] == 0x02 && this->uart_buffer_[i + 1] == 0x01 && this->uart_buffer_[i + 3] == 0x08) {
       uint8_t energy_type = this->uart_buffer_[i + 2];
 
       uint16_t value_start = i + 4;
@@ -432,19 +422,22 @@ void MbusMeter::parse_a1_frame() {
       switch (energy_type) {
         case 0x01:
           ESP_LOGI(TAG, "A1: Active energy import (1.0.1.8.0.255): %u Wh [raw: %u]", energy_scaled, energy_raw);
-          if (this->energy_sensor_ != nullptr) this->energy_sensor_->publish_state(energy_scaled);
+          if (this->energy_sensor_ != nullptr)
+            this->energy_sensor_->publish_state(energy_scaled);
           break;
         case 0x02:
           ESP_LOGI(TAG, "A1: Active energy export (1.0.2.8.0.255): %u Wh [raw: %u]", energy_scaled, energy_raw);
           break;
         case 0x03:
           ESP_LOGI(TAG, "A1: Reactive energy import (1.0.3.8.0.255): %u VArh [raw: %u]", energy_scaled, energy_raw);
-          if (this->reactive_energy_sensor_ != nullptr) this->reactive_energy_sensor_->publish_state(energy_scaled);
+          if (this->reactive_energy_sensor_ != nullptr)
+            this->reactive_energy_sensor_->publish_state(energy_scaled);
           found_reactive_import = true;
           break;
         case 0x04:
           ESP_LOGI(TAG, "A1: Reactive energy export (1.0.4.8.0.255): %u VArh [raw: %u]", energy_scaled, energy_raw);
-          if (this->reactive_export_energy_sensor_ != nullptr) this->reactive_export_energy_sensor_->publish_state(energy_scaled);
+          if (this->reactive_export_energy_sensor_ != nullptr)
+            this->reactive_export_energy_sensor_->publish_state(energy_scaled);
           break;
         default:
           ESP_LOGD(TAG, "A1: Unknown energy type 0x%02X: %u [raw: %u]", energy_type, energy_scaled, energy_raw);
@@ -459,9 +452,7 @@ void MbusMeter::parse_a1_frame() {
   // Some meters omit the type byte for reactive energy import
   if (!found_reactive_import) {
     for (uint16_t i = 15; i + 3 < this->uart_counter_; i++) {
-      if (this->uart_buffer_[i] == 0x02 &&
-          this->uart_buffer_[i + 1] == 0x01 &&
-          this->uart_buffer_[i + 2] == 0x08) {
+      if (this->uart_buffer_[i] == 0x02 && this->uart_buffer_[i + 1] == 0x01 && this->uart_buffer_[i + 2] == 0x08) {
         uint16_t value_start = i + 3;
         uint16_t value_end = this->find_next_separator(value_start);
         uint16_t value_length = value_end - value_start;
@@ -477,8 +468,8 @@ void MbusMeter::parse_a1_frame() {
           }
           uint32_t energy_scaled = energy_raw * 10;
 
-          ESP_LOGI(TAG, "A1: Reactive energy import (1.0.3.8.0.255): %u VArh [raw: %u, compact]",
-                   energy_scaled, energy_raw);
+          ESP_LOGI(TAG, "A1: Reactive energy import (1.0.3.8.0.255): %u VArh [raw: %u, compact]", energy_scaled,
+                   energy_raw);
           if (this->reactive_energy_sensor_ != nullptr) {
             this->reactive_energy_sensor_->publish_state(energy_scaled);
           }
@@ -491,10 +482,7 @@ void MbusMeter::parse_a1_frame() {
   // Search for standard OBIS patterns: 02:01:XX:07:...
   for (uint16_t i = 15; i + 3 < this->uart_counter_; i++) {
     // Standard pattern
-    if (this->uart_buffer_[i] == 0x02 &&
-        this->uart_buffer_[i + 1] == 0x01 &&
-        this->uart_buffer_[i + 3] == 0x07) {
-
+    if (this->uart_buffer_[i] == 0x02 && this->uart_buffer_[i + 1] == 0x01 && this->uart_buffer_[i + 3] == 0x07) {
       uint8_t obis_type = this->uart_buffer_[i + 2];
       uint16_t data_start = i + 4;
       uint16_t data_end = this->find_next_separator(data_start);
@@ -503,17 +491,14 @@ void MbusMeter::parse_a1_frame() {
         this->parse_a1_obis_value(obis_type, data_start, data_end);
       }
 
-      if (data_end > i) i = data_end + 2;
+      if (data_end > i)
+        i = data_end + 2;
       continue;
     }
 
     // Voltage alternate pattern: 23:02:01:XX:07:...
-    if (this->uart_buffer_[i] == 0x23 &&
-        i + 4 < this->uart_counter_ &&
-        this->uart_buffer_[i + 1] == 0x02 &&
-        this->uart_buffer_[i + 2] == 0x01 &&
-        this->uart_buffer_[i + 4] == 0x07) {
-
+    if (this->uart_buffer_[i] == 0x23 && i + 4 < this->uart_counter_ && this->uart_buffer_[i + 1] == 0x02 &&
+        this->uart_buffer_[i + 2] == 0x01 && this->uart_buffer_[i + 4] == 0x07) {
       uint8_t obis_type = this->uart_buffer_[i + 3];
       uint16_t data_start = i + 5;
       uint16_t data_end = this->find_next_separator(data_start);
@@ -522,7 +507,8 @@ void MbusMeter::parse_a1_frame() {
         this->parse_a1_obis_value(obis_type, data_start, data_end);
       }
 
-      if (data_end > i) i = data_end + 2;
+      if (data_end > i)
+        i = data_end + 2;
     }
   }
 }
@@ -530,17 +516,12 @@ void MbusMeter::parse_a1_frame() {
 uint16_t MbusMeter::find_next_separator(uint16_t start_pos) {
   for (uint16_t i = start_pos; i + 2 < this->uart_counter_; i++) {
     // Standard separator: 02:02:16
-    if (this->uart_buffer_[i] == 0x02 &&
-        this->uart_buffer_[i + 1] == 0x02 &&
-        this->uart_buffer_[i + 2] == 0x16) {
+    if (this->uart_buffer_[i] == 0x02 && this->uart_buffer_[i + 1] == 0x02 && this->uart_buffer_[i + 2] == 0x16) {
       return i;
     }
     // Energy section separator: 02:02:01:16
-    if (i + 3 < this->uart_counter_ &&
-        this->uart_buffer_[i] == 0x02 &&
-        this->uart_buffer_[i + 1] == 0x02 &&
-        this->uart_buffer_[i + 2] == 0x01 &&
-        this->uart_buffer_[i + 3] == 0x16) {
+    if (i + 3 < this->uart_counter_ && this->uart_buffer_[i] == 0x02 && this->uart_buffer_[i + 1] == 0x02 &&
+        this->uart_buffer_[i + 2] == 0x01 && this->uart_buffer_[i + 3] == 0x16) {
       return i;
     }
   }
@@ -548,7 +529,8 @@ uint16_t MbusMeter::find_next_separator(uint16_t start_pos) {
 }
 
 void MbusMeter::parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint16_t data_end) {
-  if (data_end <= data_start) return;
+  if (data_end <= data_start)
+    return;
   uint16_t data_length = data_end - data_start;
 
   switch (obis_type) {
@@ -556,7 +538,8 @@ void MbusMeter::parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint
       if (data_length >= 2) {
         uint32_t power = (this->uart_buffer_[data_start] << 8) | this->uart_buffer_[data_start + 1];
         ESP_LOGI(TAG, "A1: Active power+ (1.0.1.7.0.255): %u W", power);
-        if (this->power_sensor_ != nullptr) this->power_sensor_->publish_state(power);
+        if (this->power_sensor_ != nullptr)
+          this->power_sensor_->publish_state(power);
       }
       break;
 
@@ -571,7 +554,8 @@ void MbusMeter::parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint
       if (data_length >= 2) {
         uint32_t rp = (this->uart_buffer_[data_start] << 8) | this->uart_buffer_[data_start + 1];
         ESP_LOGI(TAG, "A1: Reactive power+ (1.0.3.7.0.255): %u VAr", rp);
-        if (this->reactive_power_sensor_ != nullptr) this->reactive_power_sensor_->publish_state(rp);
+        if (this->reactive_power_sensor_ != nullptr)
+          this->reactive_power_sensor_->publish_state(rp);
       }
       break;
 
@@ -595,7 +579,8 @@ void MbusMeter::parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint
         ESP_LOGI(TAG, "A1: Current L%d (%s): %.1f A", phase, obis_codes[phase - 1], current_a);
 
         sensor::Sensor *sensors[] = {this->current_l1_sensor_, this->current_l2_sensor_, this->current_l3_sensor_};
-        if (sensors[phase - 1] != nullptr) sensors[phase - 1]->publish_state(current_a);
+        if (sensors[phase - 1] != nullptr)
+          sensors[phase - 1]->publish_state(current_a);
       }
       break;
 
@@ -616,7 +601,8 @@ void MbusMeter::parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint
         ESP_LOGI(TAG, "A1: Voltage L%d (%s): %.1f V", phase, obis_codes[phase - 1], voltage_v);
 
         sensor::Sensor *sensors[] = {this->voltage_l1_sensor_, this->voltage_l2_sensor_, this->voltage_l3_sensor_};
-        if (sensors[phase - 1] != nullptr) sensors[phase - 1]->publish_state(voltage_v);
+        if (sensors[phase - 1] != nullptr)
+          sensors[phase - 1]->publish_state(voltage_v);
       }
       break;
 

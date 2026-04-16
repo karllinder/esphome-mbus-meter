@@ -10,7 +10,6 @@ namespace mbus_meter {
 
 class MbusMeter : public Component, public uart::UARTDevice {
  public:
-  MbusMeter() : uart::UARTDevice() {}
   void set_power_sensor(sensor::Sensor *sensor) { power_sensor_ = sensor; }
   void set_current_l1_sensor(sensor::Sensor *sensor) { current_l1_sensor_ = sensor; }
   void set_current_l2_sensor(sensor::Sensor *sensor) { current_l2_sensor_ = sensor; }
@@ -24,7 +23,7 @@ class MbusMeter : public Component, public uart::UARTDevice {
   void set_reactive_export_energy_sensor(sensor::Sensor *sensor) { reactive_export_energy_sensor_ = sensor; }
   void set_power_2a_frame_sensor(sensor::Sensor *sensor) { power_2a_frame_sensor_ = sensor; }
   void set_use_2a_frame_own_sensor(bool use_2a_frame_own_sensor) { use_2a_frame_own_sensor_ = use_2a_frame_own_sensor; }
-  
+
   void set_obis_version_text_sensor(text_sensor::TextSensor *sensor) { obis_version_text_sensor_ = sensor; }
   void set_meter_id_text_sensor(text_sensor::TextSensor *sensor) { meter_id_text_sensor_ = sensor; }
   void set_meter_type_text_sensor(text_sensor::TextSensor *sensor) { meter_type_text_sensor_ = sensor; }
@@ -63,7 +62,7 @@ class MbusMeter : public Component, public uart::UARTDevice {
   sensor::Sensor *reactive_energy_sensor_{nullptr};
   sensor::Sensor *reactive_export_energy_sensor_{nullptr};
   sensor::Sensor *power_2a_frame_sensor_{nullptr};
-  
+
   text_sensor::TextSensor *obis_version_text_sensor_{nullptr};
   text_sensor::TextSensor *meter_id_text_sensor_{nullptr};
   text_sensor::TextSensor *meter_type_text_sensor_{nullptr};
@@ -74,6 +73,11 @@ class MbusMeter : public Component, public uart::UARTDevice {
   bool use_2a_frame_own_sensor_{false};
 
   static const uint16_t FRAME_TIMEOUT_MS = 2000;
+  static const uint16_t FRAME_START_MIN_BYTES = 20;
+  static const uint16_t A1_FRAME_MIN_BYTES_TIMEOUT = 100;
+  static const uint16_t A1_FRAME_MIN_BYTES_IMMEDIATE = 150;
+  static const uint16_t SHORT_FRAME_MIN_BYTES_TIMEOUT = 18;
+  static const uint16_t SHORT_FRAME_MIN_BYTES_IMMEDIATE = 50;
 };
 
 }  // namespace mbus_meter
