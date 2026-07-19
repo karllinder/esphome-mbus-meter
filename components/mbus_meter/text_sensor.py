@@ -10,6 +10,7 @@ DEPENDENCIES = ["mbus_meter"]
 CONF_OBIS_VERSION = "obis_version"
 CONF_METER_ID = "meter_id"
 CONF_METER_TYPE = "meter_type"
+CONF_METER_TIME = "meter_time"
 
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
@@ -18,6 +19,7 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_OBIS_VERSION): text_sensor.text_sensor_schema(),
             cv.Optional(CONF_METER_ID): text_sensor.text_sensor_schema(),
             cv.Optional(CONF_METER_TYPE): text_sensor.text_sensor_schema(),
+            cv.Optional(CONF_METER_TIME): text_sensor.text_sensor_schema(),
         }
     )
 )
@@ -37,3 +39,7 @@ async def to_code(config):
     if CONF_METER_TYPE in config:
         sens = await text_sensor.new_text_sensor(config[CONF_METER_TYPE])
         cg.add(parent.set_meter_type_text_sensor(sens))
+
+    if CONF_METER_TIME in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_METER_TIME])
+        cg.add(parent.set_meter_time_text_sensor(sens))

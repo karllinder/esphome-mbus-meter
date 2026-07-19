@@ -30,6 +30,7 @@ CONF_CURRENT_L3 = "current_l3"
 CONF_VOLTAGE_L1 = "voltage_l1"
 CONF_VOLTAGE_L2 = "voltage_l2"
 CONF_VOLTAGE_L3 = "voltage_l3"
+CONF_EXPORT_ENERGY = "export_energy"
 CONF_REACTIVE_POWER = "reactive_power"
 CONF_REACTIVE_ENERGY = "reactive_energy"
 CONF_REACTIVE_EXPORT_ENERGY = "reactive_export_energy"
@@ -83,6 +84,12 @@ CONFIG_SCHEMA = cv.All(
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
             cv.Optional(CONF_ENERGY): sensor.sensor_schema(
+                unit_of_measurement=UNIT_WATT_HOURS,
+                accuracy_decimals=0,
+                device_class=DEVICE_CLASS_ENERGY,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+            ),
+            cv.Optional(CONF_EXPORT_ENERGY): sensor.sensor_schema(
                 unit_of_measurement=UNIT_WATT_HOURS,
                 accuracy_decimals=0,
                 device_class=DEVICE_CLASS_ENERGY,
@@ -152,6 +159,10 @@ async def to_code(config):
     if CONF_ENERGY in config:
         sens = await sensor.new_sensor(config[CONF_ENERGY])
         cg.add(parent.set_energy_sensor(sens))
+
+    if CONF_EXPORT_ENERGY in config:
+        sens = await sensor.new_sensor(config[CONF_EXPORT_ENERGY])
+        cg.add(parent.set_export_energy_sensor(sens))
 
     if CONF_REACTIVE_POWER in config:
         sens = await sensor.new_sensor(config[CONF_REACTIVE_POWER])
