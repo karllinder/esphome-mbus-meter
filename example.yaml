@@ -36,7 +36,7 @@ logger:
 
 # Load the M-Bus meter component from GitHub
 external_components:
-  - source: github://karllinder/esphome-mbus-meter
+  - source: github://coldreckon/esphome-mbus-meter
     components: [ mbus_meter ]
 
 # UART configuration for HAN port
