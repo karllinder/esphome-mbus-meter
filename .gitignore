@@ -3,6 +3,7 @@
 
 # Claude Code local settings
 /.claude/
+CLAUDE.md
 
 # Secrets - NEVER commit these
 /secrets.yaml
