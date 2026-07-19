@@ -24,7 +24,7 @@ Add this repository as an external component in your ESPHome configuration:
 
 ```yaml
 external_components:
-  - source: github://karllinder/esphome-mbus-meter
+  - source: github://coldreckon/esphome-mbus-meter
     components: [ mbus_meter ]
 ```
 
@@ -37,7 +37,7 @@ To opt into the beta and help shake out regressions earlier, pin the external co
 
 ```yaml
 external_components:
-  - source: github://karllinder/esphome-mbus-meter
+  - source: github://coldreckon/esphome-mbus-meter
     ref: beta
     components: [ mbus_meter ]
 ```
@@ -159,8 +159,28 @@ The Norwegian HAN interface sends two types of frames:
 ## Known Meter Quirks
 
 - Some meters occasionally send truncated 2A frames (2 bytes instead of 4 for power values)
-- Value `0x29` in single-byte power mode is a known meter bug representing ~10000W
+- Single-byte power values are the low byte of the true value with the high byte(s)
+  dropped (`0x5D` = 10:5D = 4189 W). The parser recovers the high byte from a reference:
+  the last published power when the total phase current is unchanged, otherwise an
+  estimate from the phase currents (400/230V TN grid: P ~= 230 V * sum(I), corrected for
+  reactive power). This also explains the historically observed "0x29 = ~10000 W bug"
+  (0x29XX = 10496-10751 W).
 - Current measurement scaling can vary between meters (0.1A vs 0.01A resolution)
+- **Omitted OBIS type byte**: A1 records after the first of a group are sent "compressed"
+  without the OBIS type byte — currents L2/L3 arrive as `02:01:07:10:<value>` instead of
+  `02:01:33/47:07:10:<value>`, voltage L3 as `23:02:01:07:<value>`, and reactive power+
+  as `02:01:07`. The parser assigns these by their fixed position in the AIDON list order.
+- **Variable-length values**: leading zero bytes are stripped, so current values are 0-2
+  bytes after the `0x10` long-signed tag. An *empty* value (tag only, or no payload at
+  all) is sent even under load and means "no reading in this frame" — the parser keeps
+  the previous state instead of publishing 0.
+- **Lossy value truncation**: voltage (and sometimes power) values often arrive with
+  the high byte dropped (e.g. `0x2C` instead of `09:2C`). Voltages are reconstructed by
+  picking the high-byte candidate closest to the last known value for that phase (grid
+  voltage moves slowly while candidates are 25.6 V apart, so this is unambiguous).
+- **Reactive power**: the meter reports import (+, usually empty = 0) and export (−)
+  separately; the `reactive_power` sensor publishes the net value once per A1 frame,
+  with export negative.
 
 ## Tested Meters
 
