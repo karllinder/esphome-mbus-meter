@@ -28,6 +28,22 @@ external_components:
     components: [ mbus_meter ]
 ```
 
+## Branches
+
+- **`main`** — stable, what users get by default. Only small, low-risk changes land here.
+- **`beta`** — upstream-style cleanups and larger refactors soak here first, behind the same CI as `main`. Once a change has had a chance to prove itself, `beta` gets merged back into `main`.
+
+To opt into the beta and help shake out regressions earlier, pin the external component to `beta`:
+
+```yaml
+external_components:
+  - source: github://coldreckon/esphome-mbus-meter
+    ref: beta
+    components: [ mbus_meter ]
+```
+
+If you don't add `ref:`, you're on `main` — no action needed.
+
 ## Configuration
 
 ### Minimal example
