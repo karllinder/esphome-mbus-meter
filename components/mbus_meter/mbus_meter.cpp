@@ -670,12 +670,11 @@ void MbusMeter::parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint
       if (len >= 2) {
         this->last_reactive_export_ = rp_export;
         this->last_reactive_sum_i_ = sum_i;
-      } else if (rp_export == (this->last_reactive_export_ >> 8) &&
-                 fabsf(sum_i - this->last_reactive_sum_i_) < 1.0f) {
+      } else if (rp_export == (this->last_reactive_export_ >> 8) && fabsf(sum_i - this->last_reactive_sum_i_) < 1.0f) {
         // Truncated repeat: the byte is the high byte of the last full value
         // and the load is unchanged - keep the last full value
-        ESP_LOGD(TAG, "A1: Reactive power- truncated 0x%02X, keeping last full value %u VAr",
-                 (unsigned) rp_export, this->last_reactive_export_);
+        ESP_LOGD(TAG, "A1: Reactive power- truncated 0x%02X, keeping last full value %u VAr", (unsigned) rp_export,
+                 this->last_reactive_export_);
         rp_export = this->last_reactive_export_;
       }
       ESP_LOGI(TAG, "A1: Reactive power- (1.0.4.7.0.255): %u VAr [%u byte(s)]", rp_export, len);
