@@ -71,5 +71,15 @@ LICENSE             # MIT
 
 ### Known Meter Quirks
 - 2A frames sometimes truncate power to 1 byte instead of 2
-- `0x29` single-byte = known bug for ~10000W
-- Range `0x20-0x2F` single-byte = likely truncated high values (skipped)
+- Single-byte power = low byte of the true value, high byte(s) dropped (explains the
+  old "0x29 = ~10000W bug"); reconstructed via `reconstruct_power()`: last published
+  power when total current unchanged, else estimate P ~= 230V * sum(I) (TN grid),
+  reactive-corrected. Truncated 1-byte reactive- repeats detected by high-byte match.
+- A1 records are often "compressed" with the OBIS type byte omitted (`02:01:07:...`);
+  the parser assigns them by AIDON list order (currents L2/L3 by the `0x10` tag,
+  voltage L3 via `23:02:01:07`, reactive power+ when empty and before the currents)
+- Current values: 0-2 bytes after the `0x10` tag (leading zeros stripped);
+  empty value = no reading this frame (skip, don't publish 0)
+- Voltage values often arrive with the high byte dropped (1 byte); reconstructed by
+  choosing the high-byte candidate nearest the last known per-phase value
+- Reactive power publishes once per A1 frame as net (import − export, export negative)
