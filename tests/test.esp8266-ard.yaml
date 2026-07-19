@@ -44,6 +44,8 @@ sensor:
       name: Voltage L3
     energy:
       name: Energy
+    export_energy:
+      name: Export Energy
     reactive_power:
       name: Reactive Power
     reactive_energy:
@@ -60,3 +62,5 @@ text_sensor:
       name: Meter ID
     meter_type:
       name: Meter Type
+    meter_time:
+      name: Meter Time

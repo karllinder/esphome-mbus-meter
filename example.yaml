@@ -118,6 +118,13 @@ sensor:
       state_class: total_increasing
       accuracy_decimals: 0
 
+    export_energy:
+      name: "AMS Energy Export"
+      unit_of_measurement: Wh
+      device_class: energy
+      state_class: total_increasing
+      accuracy_decimals: 0
+
     # Reactive power measurements
     reactive_power:
       name: "AMS Reactive Power"
@@ -156,3 +163,9 @@ text_sensor:
     meter_type:
       name: "AMS Meter Type"
       icon: mdi:gauge
+
+    # Meter clock from the hourly frame (date/hour, meter local standard time);
+    # doubles as a "last hourly frame received" indicator
+    meter_time:
+      name: "AMS Meter Time"
+      icon: mdi:clock-outline

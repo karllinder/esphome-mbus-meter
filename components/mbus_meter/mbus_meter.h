@@ -18,6 +18,7 @@ class MbusMeter : public Component, public uart::UARTDevice {
   void set_voltage_l2_sensor(sensor::Sensor *sensor) { voltage_l2_sensor_ = sensor; }
   void set_voltage_l3_sensor(sensor::Sensor *sensor) { voltage_l3_sensor_ = sensor; }
   void set_energy_sensor(sensor::Sensor *sensor) { energy_sensor_ = sensor; }
+  void set_export_energy_sensor(sensor::Sensor *sensor) { export_energy_sensor_ = sensor; }
   void set_reactive_power_sensor(sensor::Sensor *sensor) { reactive_power_sensor_ = sensor; }
   void set_reactive_energy_sensor(sensor::Sensor *sensor) { reactive_energy_sensor_ = sensor; }
   void set_reactive_export_energy_sensor(sensor::Sensor *sensor) { reactive_export_energy_sensor_ = sensor; }
@@ -27,6 +28,7 @@ class MbusMeter : public Component, public uart::UARTDevice {
   void set_obis_version_text_sensor(text_sensor::TextSensor *sensor) { obis_version_text_sensor_ = sensor; }
   void set_meter_id_text_sensor(text_sensor::TextSensor *sensor) { meter_id_text_sensor_ = sensor; }
   void set_meter_type_text_sensor(text_sensor::TextSensor *sensor) { meter_type_text_sensor_ = sensor; }
+  void set_meter_time_text_sensor(text_sensor::TextSensor *sensor) { meter_time_text_sensor_ = sensor; }
 
   void setup() override;
   void loop() override;
@@ -50,6 +52,8 @@ class MbusMeter : public Component, public uart::UARTDevice {
   void parse_a1_frame();
   uint16_t find_next_separator(uint16_t start_pos);
   void parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint16_t data_end);
+  void handle_energy_record(uint8_t energy_type, uint16_t value_start, uint16_t value_length);
+  void parse_clock_record(uint16_t year_lo_pos);
 
   sensor::Sensor *power_sensor_{nullptr};
   sensor::Sensor *current_l1_sensor_{nullptr};
@@ -59,6 +63,7 @@ class MbusMeter : public Component, public uart::UARTDevice {
   sensor::Sensor *voltage_l2_sensor_{nullptr};
   sensor::Sensor *voltage_l3_sensor_{nullptr};
   sensor::Sensor *energy_sensor_{nullptr};
+  sensor::Sensor *export_energy_sensor_{nullptr};
   sensor::Sensor *reactive_power_sensor_{nullptr};
   sensor::Sensor *reactive_energy_sensor_{nullptr};
   sensor::Sensor *reactive_export_energy_sensor_{nullptr};
@@ -67,6 +72,7 @@ class MbusMeter : public Component, public uart::UARTDevice {
   text_sensor::TextSensor *obis_version_text_sensor_{nullptr};
   text_sensor::TextSensor *meter_id_text_sensor_{nullptr};
   text_sensor::TextSensor *meter_type_text_sensor_{nullptr};
+  text_sensor::TextSensor *meter_time_text_sensor_{nullptr};
 
   uint8_t uart_buffer_[4096]{0};
   uint16_t uart_counter_{0};
@@ -95,6 +101,11 @@ class MbusMeter : public Component, public uart::UARTDevice {
   // frame once this frame's currents are known
   uint8_t frame_power_byte_{0};
   bool frame_power_pending_{false};
+  // Last published raw value per energy counter (import, export, reactive
+  // import, reactive export). A lossy big-endian read can only underestimate
+  // (dropped bytes remove digits), so truncated counter reads are recognized
+  // by falling below the last published value.
+  uint32_t last_energy_raw_[4]{0, 0, 0, 0};
 
   static const uint16_t FRAME_TIMEOUT_MS = 2000;
   static const uint16_t FRAME_START_MIN_BYTES = 20;

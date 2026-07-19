@@ -67,6 +67,8 @@ sensor:
 
     energy:
       name: "Energy Import"
+    export_energy:
+      name: "Energy Export"
 
     reactive_power:
       name: "Reactive Power"
@@ -89,7 +91,13 @@ text_sensor:
       name: "Meter ID"
     meter_type:
       name: "Meter Type"
+    meter_time:
+      name: "Meter Time"
 ```
+
+The `meter_time` sensor holds the meter clock (date and hour, meter local standard
+time) decoded from the hourly frame, and doubles as a "last hourly frame received"
+indicator.
 
 ### Separate 2A frame power sensor
 
@@ -126,12 +134,13 @@ See [example.yaml](example.yaml) for a full configuration example.
 | 1.0.52.7.0.255 | Voltage L2 | V | `voltage_l2` |
 | 1.0.72.7.0.255 | Voltage L3 | V | `voltage_l3` |
 | 1.0.1.8.0.255 | Active energy import | Wh | `energy` |
-| 1.0.2.8.0.255 | Active energy export | Wh | *(logged only)* |
+| 1.0.2.8.0.255 | Active energy export | Wh | `export_energy` |
 | 1.0.3.8.0.255 | Reactive energy import | VArh | `reactive_energy` |
 | 1.0.4.8.0.255 | Reactive energy export | VArh | `reactive_export_energy` |
 | 1.1.0.2.129.255 | OBIS list version | - | `obis_version` |
 | 0.0.96.1.0.255 | Meter ID | - | `meter_id` |
 | 0.0.96.1.7.255 | Meter type | - | `meter_type` |
+| 0.0.1.0.0.255 | Meter clock (hourly frame) | - | `meter_time` |
 
 ## Frame Types
 
@@ -139,6 +148,14 @@ The Norwegian HAN interface sends two types of frames:
 
 - **2A frames** (~16-20 bytes): Real-time active power, sent every few seconds
 - **A1 frames** (~150+ bytes): Comprehensive data including power, current, voltage, and energy counters, sent every ~10 seconds
+- **Hourly A1 frames** (~160 bytes, AIDON "List 3"): sent once per hour on the whole
+  hour — the regular A1 contents plus a clock record (0.0.1.0.0.255, a DLMS date-time
+  starting `07:Ex` for the year, in meter local standard time) and the four cumulative
+  energy counters (1.0.1.8.0 / 1.0.2.8.0 / 1.0.3.8.0 / 1.0.4.8.0, double-long-unsigned
+  at 10 Wh/VArh resolution). Energy values arrive with bytes dropped like everything
+  else; since a lossy big-endian read can only *under*estimate, the parser rejects
+  counter values below the last published one, skips 1-byte reads, and requires a
+  >= 3-byte read to seed the baseline after boot.
 
 ## Known Meter Quirks
 

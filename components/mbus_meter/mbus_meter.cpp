@@ -3,6 +3,7 @@
 #include "esphome/core/log.h"
 
 #include <cmath>
+#include <cstdio>
 
 namespace esphome {
 namespace mbus_meter {
@@ -26,6 +27,7 @@ void MbusMeter::dump_config() {
   LOG_SENSOR("  ", "Voltage L2", this->voltage_l2_sensor_);
   LOG_SENSOR("  ", "Voltage L3", this->voltage_l3_sensor_);
   LOG_SENSOR("  ", "Energy", this->energy_sensor_);
+  LOG_SENSOR("  ", "Export Energy", this->export_energy_sensor_);
   LOG_SENSOR("  ", "Reactive Power", this->reactive_power_sensor_);
   LOG_SENSOR("  ", "Reactive Energy", this->reactive_energy_sensor_);
   LOG_SENSOR("  ", "Reactive Export Energy", this->reactive_export_energy_sensor_);
@@ -34,6 +36,7 @@ void MbusMeter::dump_config() {
   LOG_TEXT_SENSOR("  ", "OBIS Version", this->obis_version_text_sensor_);
   LOG_TEXT_SENSOR("  ", "Meter ID", this->meter_id_text_sensor_);
   LOG_TEXT_SENSOR("  ", "Meter Type", this->meter_type_text_sensor_);
+  LOG_TEXT_SENSOR("  ", "Meter Time", this->meter_time_text_sensor_);
 }
 
 void MbusMeter::loop() { this->read_message(); }
@@ -452,42 +455,12 @@ void MbusMeter::parse_a1_frame() {
       uint16_t value_end = this->find_next_separator(value_start);
       uint16_t value_length = value_end - value_start;
 
-      // Value length 0 means the energy counter is 0
-      uint32_t energy_raw = 0;
-      if (value_length >= 4) {
-        energy_raw = this->extract_obis_value(value_start, 4);
-      } else if (value_length >= 2) {
-        energy_raw = this->extract_obis_value(value_start, 2);
-      } else if (value_length >= 1) {
-        energy_raw = this->uart_buffer_[value_start];
-      }
-
-      // Resolution: 10 Wh/VArh per the HAN spec
-      uint32_t energy_scaled = energy_raw * 10;
-
-      switch (energy_type) {
-        case 0x01:
-          ESP_LOGI(TAG, "A1: Active energy import (1.0.1.8.0.255): %u Wh [raw: %u]", energy_scaled, energy_raw);
-          if (this->energy_sensor_ != nullptr)
-            this->energy_sensor_->publish_state(energy_scaled);
-          break;
-        case 0x02:
-          ESP_LOGI(TAG, "A1: Active energy export (1.0.2.8.0.255): %u Wh [raw: %u]", energy_scaled, energy_raw);
-          break;
-        case 0x03:
-          ESP_LOGI(TAG, "A1: Reactive energy import (1.0.3.8.0.255): %u VArh [raw: %u]", energy_scaled, energy_raw);
-          if (this->reactive_energy_sensor_ != nullptr)
-            this->reactive_energy_sensor_->publish_state(energy_scaled);
+      if (energy_type >= 0x01 && energy_type <= 0x04) {
+        this->handle_energy_record(energy_type, value_start, value_length);
+        if (energy_type == 0x03)
           found_reactive_import = true;
-          break;
-        case 0x04:
-          ESP_LOGI(TAG, "A1: Reactive energy export (1.0.4.8.0.255): %u VArh [raw: %u]", energy_scaled, energy_raw);
-          if (this->reactive_export_energy_sensor_ != nullptr)
-            this->reactive_export_energy_sensor_->publish_state(energy_scaled);
-          break;
-        default:
-          ESP_LOGD(TAG, "A1: Unknown energy type 0x%02X: %u [raw: %u]", energy_type, energy_scaled, energy_raw);
-          break;
+      } else {
+        ESP_LOGD(TAG, "A1: Unknown energy type 0x%02X (%u value byte(s))", energy_type, value_length);
       }
 
       i += 4;
@@ -504,21 +477,7 @@ void MbusMeter::parse_a1_frame() {
         uint16_t value_length = value_end - value_start;
 
         if (value_length > 0 && value_length <= 4) {
-          uint32_t energy_raw = 0;
-          if (value_length >= 4) {
-            energy_raw = this->extract_obis_value(value_start, 4);
-          } else if (value_length >= 2) {
-            energy_raw = this->extract_obis_value(value_start, 2);
-          } else {
-            energy_raw = this->uart_buffer_[value_start];
-          }
-          uint32_t energy_scaled = energy_raw * 10;
-
-          ESP_LOGI(TAG, "A1: Reactive energy import (1.0.3.8.0.255): %u VArh [raw: %u, compact]", energy_scaled,
-                   energy_raw);
-          if (this->reactive_energy_sensor_ != nullptr) {
-            this->reactive_energy_sensor_->publish_state(energy_scaled);
-          }
+          this->handle_energy_record(0x03, value_start, value_length);
           break;
         }
       }
@@ -583,6 +542,19 @@ void MbusMeter::parse_a1_frame() {
       ESP_LOGD(TAG, "A1: Reactive power+ (1.0.3.7.0.255): 0 VAr [empty compressed record]");
       this->frame_reactive_seen_ = true;
       i += 5;
+      continue;
+    }
+
+    // Clock record (0.0.1.0.0.255), hourly frames only: a compressed record
+    // whose payload is a DLMS date-time starting 07:Ex (year 2016+). The
+    // leading 0x07 of the year is itself sometimes dropped, leaving the
+    // 0xEx year low byte directly after the 02:01 record marker.
+    if (this->uart_buffer_[i] == 0x02 && this->uart_buffer_[i + 1] == 0x01 && i + 3 < this->uart_counter_ &&
+        ((this->uart_buffer_[i + 2] == 0x07 && this->uart_buffer_[i + 3] >= 0xE0) ||
+         this->uart_buffer_[i + 2] >= 0xE0)) {
+      uint16_t year_lo_pos = (this->uart_buffer_[i + 2] == 0x07) ? i + 3 : i + 2;
+      this->parse_clock_record(year_lo_pos);
+      i = year_lo_pos;
       continue;
     }
 
@@ -698,12 +670,11 @@ void MbusMeter::parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint
       if (len >= 2) {
         this->last_reactive_export_ = rp_export;
         this->last_reactive_sum_i_ = sum_i;
-      } else if (rp_export == (this->last_reactive_export_ >> 8) &&
-                 fabsf(sum_i - this->last_reactive_sum_i_) < 1.0f) {
+      } else if (rp_export == (this->last_reactive_export_ >> 8) && fabsf(sum_i - this->last_reactive_sum_i_) < 1.0f) {
         // Truncated repeat: the byte is the high byte of the last full value
         // and the load is unchanged - keep the last full value
-        ESP_LOGD(TAG, "A1: Reactive power- truncated 0x%02X, keeping last full value %u VAr",
-                 (unsigned) rp_export, this->last_reactive_export_);
+        ESP_LOGD(TAG, "A1: Reactive power- truncated 0x%02X, keeping last full value %u VAr", (unsigned) rp_export,
+                 this->last_reactive_export_);
         rp_export = this->last_reactive_export_;
       }
       ESP_LOGI(TAG, "A1: Reactive power- (1.0.4.7.0.255): %u VAr [%u byte(s)]", rp_export, len);
@@ -792,6 +763,111 @@ void MbusMeter::parse_a1_obis_value(uint8_t obis_type, uint16_t data_start, uint
       ESP_LOGD(TAG, "A1: Unknown OBIS type 0x%02X (%d bytes)", obis_type, data_length);
       break;
   }
+}
+
+void MbusMeter::handle_energy_record(uint8_t energy_type, uint16_t value_start, uint16_t value_length) {
+  // Cumulative counters (double-long-unsigned, 10 Wh/VArh resolution). The
+  // meter drops bytes from these like everywhere else, and a lossy big-endian
+  // read can only *under*estimate the true value, so:
+  // - a single surviving byte carries too little information - skip it
+  // - more than 4 bytes means the record separator was dropped and the read
+  //   would swallow bytes of the next record - skip it
+  // - a value below the last published one is a truncated read - skip it
+  // - with no baseline yet (fresh boot), only a >=3-byte read is trusted to
+  //   seed it; publishing a truncated low value first would register a huge
+  //   phantom energy step in Home Assistant once the full value arrives
+  static const char *const NAMES[] = {"Active energy import (1.0.1.8.0.255)", "Active energy export (1.0.2.8.0.255)",
+                                      "Reactive energy import (1.0.3.8.0.255)",
+                                      "Reactive energy export (1.0.4.8.0.255)"};
+  static const char *const UNITS[] = {"Wh", "Wh", "VArh", "VArh"};
+  uint8_t idx = energy_type - 1;
+
+  if (value_length == 1) {
+    ESP_LOGD(TAG, "A1: %s: 1-byte value 0x%02X - truncated, skipped", NAMES[idx], this->uart_buffer_[value_start]);
+    return;
+  }
+  if (value_length > 4) {
+    ESP_LOGD(TAG, "A1: %s: %u-byte value - separator lost, skipped", NAMES[idx], value_length);
+    return;
+  }
+
+  // Value length 0 means the counter is 0
+  uint32_t energy_raw = (value_length > 0) ? this->extract_obis_value(value_start, (uint8_t) value_length) : 0;
+
+  if (energy_raw < this->last_energy_raw_[idx]) {
+    ESP_LOGD(TAG, "A1: %s: %u below last published %u - truncated, skipped", NAMES[idx], energy_raw,
+             this->last_energy_raw_[idx]);
+    return;
+  }
+  if (this->last_energy_raw_[idx] == 0 && value_length > 0 && value_length < 3) {
+    ESP_LOGD(TAG, "A1: %s: %u-byte value %u without baseline - skipped", NAMES[idx], value_length, energy_raw);
+    return;
+  }
+  this->last_energy_raw_[idx] = energy_raw;
+
+  uint32_t energy_scaled = energy_raw * 10;
+  ESP_LOGI(TAG, "A1: %s: %u %s [raw: %u, %u byte(s)]", NAMES[idx], energy_scaled, UNITS[idx], energy_raw, value_length);
+
+  sensor::Sensor *sensors[] = {this->energy_sensor_, this->export_energy_sensor_, this->reactive_energy_sensor_,
+                               this->reactive_export_energy_sensor_};
+  if (sensors[idx] != nullptr)
+    sensors[idx]->publish_state(energy_scaled);
+}
+
+void MbusMeter::parse_clock_record(uint16_t year_lo_pos) {
+  // Clock (0.0.1.0.0.255), sent only in the hourly frame as a DLMS date-time:
+  // 07:Ex(year):MM:DD:dow:hh:mm:ss:hundredths:deviation:status. Hourly frames
+  // are stamped on the whole hour, so minute/second are zero and usually
+  // dropped along with other bytes; the meter clock runs local standard time
+  // (no DST). Decode what survives, anchored on the year, and publish it as a
+  // "last hourly frame" reference.
+  uint16_t year = 0x0700 | this->uart_buffer_[year_lo_pos];
+
+  uint16_t pos = year_lo_pos + 1;
+  uint8_t month = 0, day = 0;
+  if (pos < this->uart_counter_ && this->uart_buffer_[pos] >= 1 && this->uart_buffer_[pos] <= 12)
+    month = this->uart_buffer_[pos++];
+  if (month != 0 && pos < this->uart_counter_ && this->uart_buffer_[pos] >= 1 && this->uart_buffer_[pos] <= 31)
+    day = this->uart_buffer_[pos++];
+  if (month == 0 || day == 0) {
+    ESP_LOGD(TAG, "A1: Clock record at pos %u: month/day bytes dropped - skipped", year_lo_pos);
+    return;
+  }
+
+  // Day-of-week (1-7) and hour (0-23) overlap in range, so collect the
+  // in-range bytes up to the deviation/status bytes (>= 0x80) or the next
+  // record and take the last one as the hour. A trailing zero is more likely
+  // the (normally dropped) zero minute than a midnight hour - ignore it. A
+  // single surviving byte of 1-7 could be either field - publish date only.
+  uint8_t candidates[3];
+  uint8_t n = 0;
+  for (uint16_t j = 0; j < 3 && pos + j < this->uart_counter_; j++) {
+    uint8_t b = this->uart_buffer_[pos + j];
+    if (b > 23)
+      break;
+    if (b == 0x02 && pos + j + 1 < this->uart_counter_ &&
+        (this->uart_buffer_[pos + j + 1] == 0x01 || this->uart_buffer_[pos + j + 1] == 0x02))
+      break;  // start of the separator or the next record, not a time byte
+    candidates[n++] = b;
+  }
+  while (n > 1 && candidates[n - 1] == 0)
+    n--;
+  int8_t hour = -1;
+  if (n >= 2) {
+    hour = (int8_t) candidates[n - 1];
+  } else if (n == 1 && (candidates[0] == 0 || candidates[0] > 7)) {
+    hour = (int8_t) candidates[0];
+  }
+
+  char buf[24];
+  if (hour >= 0) {
+    snprintf(buf, sizeof(buf), "%04u-%02u-%02u %02d:00", year, month, day, hour);
+  } else {
+    snprintf(buf, sizeof(buf), "%04u-%02u-%02u", year, month, day);
+  }
+  ESP_LOGI(TAG, "A1: Meter clock (0.0.1.0.0.255): %s [meter local standard time]", buf);
+  if (this->meter_time_text_sensor_ != nullptr)
+    this->meter_time_text_sensor_->publish_state(buf);
 }
 
 }  // namespace mbus_meter
